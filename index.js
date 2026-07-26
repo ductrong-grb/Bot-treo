@@ -2,8 +2,8 @@ const mineflayer = require('mineflayer');
 const http = require('http');
 
 const botOptions = {
-  host: 'Zenith-fSk4.aternos.me', 
-  port: 37067,                
+  host: '136.243.83.105', 
+  port: 25847,                
   username: 'BotTreoServer',  
   version: '1.21.1'           
 };
