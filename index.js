@@ -7,7 +7,7 @@ const CONFIG = {
     host: '168.119.78.155', // Địa chỉ IP server (không để chung với port)
     port: 25847,            // Cổng kết nối (phải là dạng số, không để trong dấu nháy)
     username: 'TreoBot_Pro', // Tên nhân vật của bot trong game
-    version: '1.20.1',      // Nhập CHÍNH XÁC phiên bản server đang chạy để tránh bị kick
+    version: '1.21.1',      // Nhập CHÍNH XÁC phiên bản server đang chạy để tránh bị kick
     auth: 'offline'         // Giữ nguyên nếu là server crack/offline
 };
 
