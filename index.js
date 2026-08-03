@@ -2,8 +2,8 @@ const mineflayer = require('mineflayer');
 const http = require('http');
 
 const botOptions = {
-  host: '136.243.83.105', 
-  port: 25847,                
+  host: 'netheriteh.falixsrv.me', 
+  port: 168.119.78.155:25847,                
   username: 'BotTreoServerb',  
   version: '1.21.1'           
 };
