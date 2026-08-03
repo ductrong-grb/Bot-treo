@@ -44,6 +44,16 @@ function createMinecraftBot() {
         }, 20000);
     });
 
+    // Tự động hồi sinh khi bị quái vật hoặc người chơi khác đánh chết
+    bot.on('death', () => {
+        console.log('[Hệ thống] Bot đã bị chết! Đang tự động hồi sinh sau 2 giây...');
+        setTimeout(() => {
+            if (bot) {
+                bot.respawn(); // Kích hoạt lệnh hồi sinh của Mineflayer
+            }
+        }, 2000);
+    });
+
     // Nhận diện lý do bị server đá (Kicked)
     bot.on('kicked', (reason) => {
         console.warn(`[Cảnh báo] Bot bị server đá với lý do: ${reason}`);
