@@ -2,10 +2,8 @@
   "name": "bot-treo-mc",
   "version": "1.0.0",
   "main": "index.js",
-  "scripts": {
-    "start": "node index.js"
-  },
   "dependencies": {
-    "mineflayer": "^4.20.0"
+    "mineflayer": "^4.22.0",
+    "express": "^4.19.0"
   }
 }
