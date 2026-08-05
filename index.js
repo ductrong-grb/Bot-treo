@@ -6,7 +6,7 @@ const app = express();
 const CONFIG = {
     host: '162.55.100.208', // Địa chỉ IP server
     port: 25847,            // Cổng kết nối
-    username: 'hâhhditb', // Tên nhân vật của bot
+    username: 'hahhditb', // Tên nhân vật của bot
     version: '1.21.1',      // Phiên bản server
     auth: 'offline'         // Giữ nguyên nếu là server crack/offline
 };
