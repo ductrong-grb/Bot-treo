@@ -4,7 +4,7 @@ const app = express();
 
 // --- CẤU HÌNH BOT (THAY ĐỔI TẠI ĐÂY) ---
 const CONFIG = {
-    host: '168.119.78.155', // Địa chỉ IP server
+    host: '162.55.100.208', // Địa chỉ IP server
     port: 25847,            // Cổng kết nối
     username: 'hâhhditb', // Tên nhân vật của bot
     version: '1.21.1',      // Phiên bản server
