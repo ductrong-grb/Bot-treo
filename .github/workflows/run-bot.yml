@@ -1,0 +1,26 @@
+name: Minecraft Bot Treo
+
+on:
+  workflow_dispatch: # Cho phép bấm nút chạy thủ công trên GitHub
+  schedule:
+    - cron: '*/30 * * * *' # Tự động chạy lại cứ mỗi 30 phút để duy trì
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Clone Repository
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Install Dependencies
+      run: npm install
+
+    - name: Start Bot
+      run: node bot.js
+
