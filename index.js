@@ -2,19 +2,27 @@ const mineflayer = require('mineflayer');
 const express = require('express');
 const app = express();
 
-// --- CẤU HÌNH BOT (THAY ĐỔI TẠI ĐÂY) ---
+// --- CẤU HÌNH BOT MỚI ---
 const CONFIG = {
-    host: '168.119.78.155', // Địa chỉ IP server (không để chung với port)
-    port: 25847,            // Cổng kết nối (phải là dạng số, không để trong dấu nháy)
-    username: 'TreoBot_Pro', // Tên nhân vật của bot trong game
-    version: '1.21.1',      // Nhập CHÍNH XÁC phiên bản server đang chạy để tránh bị kick
-    auth: 'offline'         // Giữ nguyên nếu là server crack/offline
+    host: '168.119.78.155', 
+    port: 25847,            
+    username: 'TreoBot_y', 
+    version: '1.21.1',      
+    auth: 'offline'         
 };
 
 let bot;
+let reconnectInterval = null;
 
 function createMinecraftBot() {
-    console.log(`[Hệ thống] Đang khởi tạo kết nối đến ${CONFIG.host}:${CONFIG.port}...`);
+    if (bot) {
+        try {
+            bot.quit();
+        } catch (e) {}
+        bot = null;
+    }
+
+    console.log(`[Hệ thống] Đang tạo kết nối mới sạch tới ${CONFIG.host}:${CONFIG.port}...`);
     
     bot = mineflayer.createBot({
         host: CONFIG.host,
@@ -22,72 +30,69 @@ function createMinecraftBot() {
         username: CONFIG.username,
         version: CONFIG.version,
         auth: CONFIG.auth,
-        hideErrors: false
+        // Cấu hình bổ sung giúp giảm khả năng bị phát hiện là client giả lập
+        checkTimeoutInterval: 60000,
+        brand: 'vanilla'
     });
 
-    // Xử lý khi vào server thành công
-    bot.on('spawn', () => {
-        console.log(`[Thành công] Bot "${bot.username}" đã vào server và đang treo!`);
+    // Xử lý khi vào server thành công và thực sự nhận entity
+    bot.once('spawn', () => {
+        console.log(`[Thành công] Bot "${bot.username}" đã thực sự bám trụ được vào server!`);
         
-        // Chat lệnh đăng ký/đăng nhập nếu server yêu cầu (bỏ dấu // ở đầu để dùng)
-        // bot.chat('/register matkhau123 matkhau123');
-        // bot.chat('/login matkhau123');
-
-        // Tự động chuyển sang chế độ Creative sau 3 giây vào game (Yêu cầu bot phải có quyền OP)
+        // Tự động chuyển sang chế độ Sáng Tạo nếu có quyền OP
         setTimeout(() => {
-            if (bot) {
-                bot.chat('/gamemode creative TreoBot_Pro');
-                console.log('[Hệ thống] Đã thực thi lệnh chuyển sang chế độ Sáng Tạo.');
-            }
-        }, 3000);
-        
-        // Giả lập hành động nhảy nhỏ mỗi 20 giây để đánh lừa hệ thống Anti-AFK
-        setInterval(() => {
             if (bot && bot.entity) {
-                bot.setControlState('jump', true);
-                setTimeout(() => {
-                    if (bot && bot.entity) bot.setControlState('jump', false);
-                }, 500);
+                bot.chat('/gamemode creative TreoBot_Pro');
             }
-        }, 20000);
+        }, 4000);
+
+        // Chống AFK nhẹ nhàng bằng cách quay góc nhìn thay vì chỉ nhảy liên tục
+        const afkInterval = setInterval(() => {
+            if (!bot || !bot.entity) {
+                clearInterval(afkInterval);
+                return;
+            }
+            // Xoay nhẹ góc nhìn để lừa bộ lọc chống đứng hình của server
+            const yaw = bot.entity.yaw + 0.5;
+            bot.look(yaw, bot.entity.pitch, true);
+        }, 15000);
     });
 
-    // Tự động hồi sinh nếu lỡ bị chết trước khi kịp chuyển Creative
+    // Xử lý khi bị quái đánh chết
     bot.on('death', () => {
-        console.log('[Hệ thống] Bot đã bị chết! Đang tự động hồi sinh sau 2 giây...');
+        console.log('[Hệ thống] Bot đã chết, đang hồi sinh...');
         setTimeout(() => {
-            if (bot) {
-                bot.respawn(); // Kích hoạt lệnh hồi sinh của Mineflayer
-            }
+            if (bot) bot.respawn();
         }, 2000);
     });
 
-    // Nhận diện lý do bị server đá (Kicked)
+    // Xử lý khi bị server đá
     bot.on('kicked', (reason) => {
-        console.warn(`[Cảnh báo] Bot bị server đá với lý do: ${reason}`);
+        console.warn(`[Cảnh báo] Bị server đá, lý do: ${reason}`);
     });
 
-    // Tự động kết nối lại sau 5 giây nếu mất kết nối hoặc sập (giúp giữ server không bị Auto-Stop)
-    bot.on('end', () => {
-        console.log('[Ngắt kết nối] Đã mất liên lạc với server. Đang chờ 5 giây để thử lại...');
-        setTimeout(() => {
-            createMinecraftBot();
-        }, 5000);
+    // Xử lý khi mất kết nối
+    bot.on('end', (reason) => {
+        console.log(`[Ngắt kết nối] Lý do: ${reason}. Đang kết nối lại sau 5 giây...`);
+        if (!reconnectInterval) {
+            reconnectInterval = setTimeout(() => {
+                reconnectInterval = null;
+                createMinecraftBot();
+            }, 5000);
+        }
     });
 
-    // Bắt lỗi hệ thống để bot không làm sập tiến trình Node.js trên Render
     bot.on('error', (err) => {
-        console.error(`[Lỗi kết nối]: ${err.message}`);
+        console.error(`[Lỗi socket]: ${err.message}`);
     });
 }
 
-// Giữ cho Render luôn chạy (Web Service yêu cầu mở port)
+// Giữ Web Service sống trên Render
 const PORT = process.env.PORT || 8080;
 app.get('/', (req, res) => {
-    res.send('Bot Minecraft đang hoạt động ổn định ở chế độ Sáng Tạo!');
+    res.send('Bot Minecraft phiên bản mới đang chạy ổn định!');
 });
 app.listen(PORT, () => {
-    console.log(`[Web] Cổng giám sát hoạt động tại port: ${PORT}`);
-    // Khởi chạy bot Minecraft
+    console.log(`[Web] Đang lắng nghe tại cổng ${PORT}`);
     createMinecraftBot();
 });
