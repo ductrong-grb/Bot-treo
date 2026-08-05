@@ -6,7 +6,7 @@ const app = express();
 const CONFIG = {
     host: '168.119.78.155', // Địa chỉ IP server
     port: 25847,            // Cổng kết nối
-    username: 'TreoBot_Pro', // Tên nhân vật của bot
+    username: 'hâhhditb', // Tên nhân vật của bot
     version: '1.21.1',      // Phiên bản server
     auth: 'offline'         // Giữ nguyên nếu là server crack/offline
 };
