@@ -32,19 +32,27 @@ function createMinecraftBot() {
         // Chat lệnh đăng ký/đăng nhập nếu server yêu cầu (bỏ dấu // ở đầu để dùng)
         // bot.chat('/register matkhau123 matkhau123');
         // bot.chat('/login matkhau123');
+
+        // Tự động chuyển sang chế độ Creative sau 3 giây vào game (Yêu cầu bot phải có quyền OP)
+        setTimeout(() => {
+            if (bot) {
+                bot.chat('/gamemode creative TreoBot_Pro');
+                console.log('[Hệ thống] Đã thực thi lệnh chuyển sang chế độ Sáng Tạo.');
+            }
+        }, 3000);
         
         // Giả lập hành động nhảy nhỏ mỗi 20 giây để đánh lừa hệ thống Anti-AFK
         setInterval(() => {
             if (bot && bot.entity) {
                 bot.setControlState('jump', true);
                 setTimeout(() => {
-                    if(bot && bot.entity) bot.setControlState('jump', false);
+                    if (bot && bot.entity) bot.setControlState('jump', false);
                 }, 500);
             }
         }, 20000);
     });
 
-    // Tự động hồi sinh khi bị quái vật hoặc người chơi khác đánh chết
+    // Tự động hồi sinh nếu lỡ bị chết trước khi kịp chuyển Creative
     bot.on('death', () => {
         console.log('[Hệ thống] Bot đã bị chết! Đang tự động hồi sinh sau 2 giây...');
         setTimeout(() => {
@@ -59,15 +67,15 @@ function createMinecraftBot() {
         console.warn(`[Cảnh báo] Bot bị server đá với lý do: ${reason}`);
     });
 
-    // Tự động kết nối lại sau 15 giây nếu mất kết nối hoặc sập
+    // Tự động kết nối lại sau 5 giây nếu mất kết nối hoặc sập (giúp giữ server không bị Auto-Stop)
     bot.on('end', () => {
-        console.log('[Ngắt kết nối] Đã mất liên lạc với server. Đang chờ 15 giây để thử lại...');
+        console.log('[Ngắt kết nối] Đã mất liên lạc với server. Đang chờ 5 giây để thử lại...');
         setTimeout(() => {
             createMinecraftBot();
-        }, 15000);
+        }, 5000);
     });
 
-    // Bắt lỗi hệ thống để bot không làm sập server Render của bạn
+    // Bắt lỗi hệ thống để bot không làm sập tiến trình Node.js trên Render
     bot.on('error', (err) => {
         console.error(`[Lỗi kết nối]: ${err.message}`);
     });
@@ -76,7 +84,7 @@ function createMinecraftBot() {
 // Giữ cho Render luôn chạy (Web Service yêu cầu mở port)
 const PORT = process.env.PORT || 8080;
 app.get('/', (req, res) => {
-    res.send('Bot Minecraft đang hoạt động ổn định!');
+    res.send('Bot Minecraft đang hoạt động ổn định ở chế độ Sáng Tạo!');
 });
 app.listen(PORT, () => {
     console.log(`[Web] Cổng giám sát hoạt động tại port: ${PORT}`);
