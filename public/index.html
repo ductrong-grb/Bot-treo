@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quản Lý Bot Minecraft</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; background: #121212; color: #e0e0e0; padding: 15px; margin: 0; }
+        h2 { text-align: center; color: #4CAF50; }
+        .server-box { background: #1e1e1e; border: 1px solid #444; padding: 15px; border-radius: 8px; margin-bottom: 20px; max-width: 930px; margin-left: auto; margin-right: auto; }
+        .container { display: flex; gap: 20px; flex-wrap: wrap; justify-content: center; }
+        .bot-card { background: #1e1e1e; border: 1px solid #333; border-radius: 8px; padding: 15px; width: 440px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+        .status { font-weight: bold; margin-bottom: 10px; }
+        input[type="text"], input[type="number"] { padding: 8px; background: #2d2d2d; border: 1px solid #444; color: #fff; border-radius: 4px; margin-bottom: 8px; }
+        .input-group { width: 65%; }
+        button { padding: 8px 15px; background: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        button:hover { background: #45a049; }
+        .btn-server { background: #2196F3; }
+        .btn-server:hover { background: #0b7dda; }
+        .logs { background: #000; color: #00ff00; font-family: monospace; padding: 10px; height: 180px; overflow-y: scroll; font-size: 11px; border-radius: 4px; margin-top: 10px; border: 1px solid #333; }
+    </style>
+</head>
+<body>
+    <h2>⚡ HỆ THỐNG QUẢN LÝ 2 BOT TREO MINECRAFT ⚡</h2>
+
+    <!-- Khung đổi IP / Port Server -->
+    <div class="server-box">
+        <h3>🌐 Cấu hình Server Minecraft</h3>
+        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+            <div>
+                <label>IP Server:</label><br>
+                <input type="text" id="server-ip" placeholder="Nhập IP...">
+            </div>
+            <div>
+                <label>Port:</label><br>
+                <input type="number" id="server-port" placeholder="Nhập Port..." style="width: 100px;">
+            </div>
+            <div style="align-self: flex-end;">
+                <button class="btn-server" onclick="updateServer()">Đổi Server & Kết Nối Lại</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Khung quản lý Bot 1 & Bot 2 -->
+    <div class="container">
+        <div class="bot-card">
+            <h3>🤖 Bot số 1</h3>
+            <div class="status" id="status-1">Trạng thái: Đang tải...</div>
+            <div>
+                <input type="text" id="name-1" class="input-group" placeholder="Tên bot mới..." value="BotTreo01">
+                <button onclick="changeName(1)">Đổi Tên</button>
+            </div>
+            <div class="logs" id="logs-1">Đang chờ log...</div>
+        </div>
+
+        <div class="bot-card">
+            <h3>🤖 Bot số 2</h3>
+            <div class="status" id="status-2">Trạng thái: Đang tải...</div>
+            <div>
+                <input type="text" id="name-2" class="input-group" placeholder="Tên bot mới..." value="BotTreo02">
+                <button onclick="changeName(2)">Đổi Tên</button>
+            </div>
+            <div class="logs" id="logs-2">Đang chờ log...</div>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+
+        function updateServer() {
+            const ip = document.getElementById('server-ip').value.trim();
+            const port = document.getElementById('server-port').value.trim();
+            if(!ip || !port) {
+                alert('Vui lòng nhập đầy đủ IP và Port!');
+                return;
+            }
+            socket.emit('update_server', { host: ip, port: port });
+            alert('Đã gửi lệnh đổi server thành công! Các bot sẽ tự động kết nối sang địa chỉ mới.');
+        }
+
+        function changeName(botId) {
+            const newName = document.getElementById('name-' + botId).value.trim();
+            if (!newName) {
+                alert('Vui lòng nhập tên hợp lệ!');
+                return;
+            }
+            socket.emit('change_bot_name', { id: botId, username: newName });
+        }
+
+        socket.on('update_server_config', (config) => {
+            document.getElementById('server-ip').value = config.host;
+            document.getElementById('server-port').value = config.port;
+        });
+
+        socket.on('update_status', (bots) => {
+            bots.forEach(b => {
+                const statusEl = document.getElementById('status-' + b.id);
+                if (statusEl) {
+                    statusEl.innerText = 'Trạng thái: ' + b.status;
+                    statusEl.style.color = b.status.includes('Online') ? '#4CAF50' : '#ff9800';
+                }
+            });
+        });
+
+        socket.on('update_logs', (data) => {
+            const logsEl = document.getElementById('logs-' + data.botId);
+            if (logsEl) {
+                logsEl.innerHTML = data.logs.join('<br>');
+                logsEl.scrollTop = logsEl.scrollHeight;
+            }
+        });
+    </script>
+</body>
+</html>
+
