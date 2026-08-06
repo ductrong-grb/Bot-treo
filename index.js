@@ -6,10 +6,9 @@ const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
-// Tăng thời gian pingTimeout để giữ kết nối Socket ổn định
 const io = new Server(server, { pingTimeout: 60000 });
 
-// --- CẤU HÌNH MẶC ĐỊNH BAN ĐẦU ---
+// Cấu hình Server mặc định
 let SERVER_CONFIG = {
     host: '167.235.93.185',
     port: 25847,
@@ -17,62 +16,70 @@ let SERVER_CONFIG = {
     auth: 'offline'
 };
 
-// Trạng thái của 2 Bot
-let bots = [
-    { id: 1, username: 'BotTreao01', instance: null, status: 'Đang tắt', logs: [] },
-    { id: 2, username: 'BotTreos02', instance: null, status: 'Đang tắt', logs: [] }
+// Trạng thái của 2 Bot (Không lưu instance trực tiếp vào đây để tránh lỗi Socket)
+let botsData = [
+    { id: 1, username: 'BotTreos01', status: 'Đang tắt', logs: [] },
+    { id: 2, username: 'BotTreo0z2', status: 'Đang tắt', logs: [] }
 ];
 
-// Hàm ghi log (Đã giới hạn lưu 25 dòng log/bot để tiết kiệm RAM)
+// Lưu trữ instance của bot riêng biệt
+const botInstances = { 1: null, 2: null };
+
+// Hàm gửi dữ liệu trạng thái an toàn qua Web
+function sendSafeStatus() {
+    io.emit('update_status', botsData);
+}
+
+// Hàm ghi log gọn nhẹ
 function addLog(botId, message) {
     const time = new Date().toLocaleTimeString();
     const logText = `[${time}] [Bot ${botId}] ${message}`;
     console.log(logText);
     
-    const targetBot = bots.find(b => b.id === botId);
+    const targetBot = botsData.find(b => b.id === botId);
     if (targetBot) {
         targetBot.logs.push(logText);
-        if (targetBot.logs.length > 25) targetBot.logs.shift(); // Xóa log cũ tránh rò rỉ RAM
+        if (targetBot.logs.length > 20) targetBot.logs.shift(); // Giữ tối đa 20 dòng log
     }
     io.emit('update_logs', { botId, logs: targetBot ? targetBot.logs : [] });
 }
 
 // Hàm khởi chạy bot
 function startBot(botConfig) {
-    const targetBot = bots.find(b => b.id === botConfig.id);
+    const targetBot = botsData.find(b => b.id === botConfig.id);
     if (!targetBot) return;
 
-    // Dọn dẹp bot cũ kỹ càng trước khi tạo mới
-    if (targetBot.instance) {
+    // Dọn dẹp bot cũ
+    if (botInstances[botConfig.id]) {
         try { 
-            targetBot.instance.removeAllListeners();
-            targetBot.instance.quit(); 
+            botInstances[botConfig.id].removeAllListeners();
+            botInstances[botConfig.id].quit(); 
         } catch (e) {}
-        targetBot.instance = null;
+        botInstances[botConfig.id] = null;
     }
 
     targetBot.status = 'Đang kết nối...';
-    io.emit('update_status', bots);
-    addLog(botConfig.id, `Đang kết nối tới ${SERVER_CONFIG.host}:${SERVER_CONFIG.port} với tên: ${botConfig.username}...`);
+    sendSafeStatus();
+    addLog(botConfig.id, `Đang kết nối tới ${SERVER_CONFIG.host}:${SERVER_CONFIG.port} với tên: ${targetBot.username}...`);
 
     const bot = mineflayer.createBot({
         host: SERVER_CONFIG.host,
         port: Number(SERVER_CONFIG.port),
-        username: botConfig.username,
+        username: targetBot.username,
         version: SERVER_CONFIG.version,
         auth: SERVER_CONFIG.auth,
         hideErrors: true,
         checkTimeoutInterval: 60000
     });
 
-    targetBot.instance = bot;
+    botInstances[botConfig.id] = bot;
 
     bot.once('spawn', () => {
         targetBot.status = 'Đang trong game (Online)';
-        io.emit('update_status', bots);
+        sendSafeStatus();
         addLog(botConfig.id, `Đã vào server thành công với tên "${bot.username}"!`);
 
-        // Anti-AFK & di chuyển ngẫu nhiên
+        // Anti-AFK
         const afkInterval = setInterval(() => {
             if (bot && bot.entity) {
                 const randomYaw = bot.entity.yaw + (Math.random() - 0.5) * 2;
@@ -101,8 +108,8 @@ function startBot(botConfig) {
     });
 
     bot.on('end', (reason) => {
-        targetBot.status = 'Mất kết nối, đang thử lại...';
-        io.emit('update_status', bots);
+        targetBot.status = 'Mất kết nối';
+        sendSafeStatus();
         addLog(botConfig.id, `Mất kết nối (${reason}). Thử lại sau 35 giây...`);
         
         setTimeout(() => { startBot(botConfig); }, 35000);
@@ -117,28 +124,25 @@ function startBot(botConfig) {
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 
-// Xử lý sự kiện WebSocket
+// Xử lý WebSocket
 io.on('connection', (socket) => {
-    socket.emit('update_status', bots);
+    socket.emit('update_status', botsData);
     socket.emit('update_server_config', SERVER_CONFIG);
-    bots.forEach(b => {
+    botsData.forEach(b => {
         socket.emit('update_logs', { botId: b.id, logs: b.logs });
     });
 
-    // Nhận cấu hình IP/Port mới từ Web
     socket.on('update_server', (newConfig) => {
         SERVER_CONFIG.host = newConfig.host;
         SERVER_CONFIG.port = Number(newConfig.port);
         console.log(`[Hệ thống] Đã đổi IP Server thành: ${SERVER_CONFIG.host}:${SERVER_CONFIG.port}`);
         
-        // Đổi IP và kết nối giãn cách 6 giây tránh spam
-        startBot(bots[0]);
-        setTimeout(() => { startBot(bots[1]); }, 6000);
+        startBot(botsData[0]);
+        setTimeout(() => { startBot(botsData[1]); }, 6000);
     });
 
-    // Nhận yêu cầu đổi tên bot
     socket.on('change_bot_name', (data) => {
-        const target = bots.find(b => b.id === data.id);
+        const target = botsData.find(b => b.id === data.id);
         if (target) {
             target.username = data.username;
             addLog(target.id, `Đổi tên thành: ${target.username}. Đang kết nối lại...`);
@@ -147,10 +151,10 @@ io.on('connection', (socket) => {
     });
 });
 
-// Cho Bot 1 vào trước, 6 giây sau Bot 2 mới vào (chống bị Server chặn do vào cùng lúc)
-startBot(bots[0]);
+// Cho Bot 1 vào trước, 6 giây sau Bot 2 mới vào
+startBot(botsData[0]);
 setTimeout(() => {
-    startBot(bots[1]);
+    startBot(botsData[1]);
 }, 6000);
 
 const PORT = process.env.PORT || 8080;
