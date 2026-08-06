@@ -6,7 +6,8 @@ const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
+// Tăng thời gian pingTimeout để giữ kết nối Socket ổn định
+const io = new Server(server, { pingTimeout: 60000 });
 
 // --- CẤU HÌNH MẶC ĐỊNH BAN ĐẦU ---
 let SERVER_CONFIG = {
@@ -18,11 +19,11 @@ let SERVER_CONFIG = {
 
 // Trạng thái của 2 Bot
 let bots = [
-    { id: 1, username: 'BotTreo01', instance: null, status: 'Đang tắt', logs: [] },
-    { id: 2, username: 'BotTreo02', instance: null, status: 'Đang tắt', logs: [] }
+    { id: 1, username: 'BotTreao01', instance: null, status: 'Đang tắt', logs: [] },
+    { id: 2, username: 'BotTreos02', instance: null, status: 'Đang tắt', logs: [] }
 ];
 
-// Hàm ghi log
+// Hàm ghi log (Đã giới hạn lưu 25 dòng log/bot để tiết kiệm RAM)
 function addLog(botId, message) {
     const time = new Date().toLocaleTimeString();
     const logText = `[${time}] [Bot ${botId}] ${message}`;
@@ -31,7 +32,7 @@ function addLog(botId, message) {
     const targetBot = bots.find(b => b.id === botId);
     if (targetBot) {
         targetBot.logs.push(logText);
-        if (targetBot.logs.length > 50) targetBot.logs.shift();
+        if (targetBot.logs.length > 25) targetBot.logs.shift(); // Xóa log cũ tránh rò rỉ RAM
     }
     io.emit('update_logs', { botId, logs: targetBot ? targetBot.logs : [] });
 }
@@ -41,8 +42,13 @@ function startBot(botConfig) {
     const targetBot = bots.find(b => b.id === botConfig.id);
     if (!targetBot) return;
 
+    // Dọn dẹp bot cũ kỹ càng trước khi tạo mới
     if (targetBot.instance) {
-        try { targetBot.instance.quit(); } catch (e) {}
+        try { 
+            targetBot.instance.removeAllListeners();
+            targetBot.instance.quit(); 
+        } catch (e) {}
+        targetBot.instance = null;
     }
 
     targetBot.status = 'Đang kết nối...';
@@ -55,12 +61,13 @@ function startBot(botConfig) {
         username: botConfig.username,
         version: SERVER_CONFIG.version,
         auth: SERVER_CONFIG.auth,
-        hideErrors: true
+        hideErrors: true,
+        checkTimeoutInterval: 60000
     });
 
     targetBot.instance = bot;
 
-    bot.on('spawn', () => {
+    bot.once('spawn', () => {
         targetBot.status = 'Đang trong game (Online)';
         io.emit('update_status', bots);
         addLog(botConfig.id, `Đã vào server thành công với tên "${bot.username}"!`);
@@ -69,18 +76,17 @@ function startBot(botConfig) {
         const afkInterval = setInterval(() => {
             if (bot && bot.entity) {
                 const randomYaw = bot.entity.yaw + (Math.random() - 0.5) * 2;
-                const randomPitch = (Math.random() - 0.5) * 0.5;
-                bot.look(randomYaw, randomPitch, true);
+                bot.look(randomYaw, 0, true);
 
                 const actions = ['forward', 'back', 'left', 'right'];
                 const randomAction = actions[Math.floor(Math.random() * actions.length)];
                 bot.setControlState(randomAction, true);
-                setTimeout(() => { bot.setControlState(randomAction, false); }, 1500);
+                setTimeout(() => { if (bot) bot.setControlState(randomAction, false); }, 1200);
 
                 bot.setControlState('jump', true);
-                setTimeout(() => { bot.setControlState('jump', false); }, 400);
+                setTimeout(() => { if (bot) bot.setControlState('jump', false); }, 400);
             }
-        }, 20000);
+        }, 25000);
 
         bot.once('end', () => { clearInterval(afkInterval); });
     });
@@ -97,9 +103,9 @@ function startBot(botConfig) {
     bot.on('end', (reason) => {
         targetBot.status = 'Mất kết nối, đang thử lại...';
         io.emit('update_status', bots);
-        addLog(botConfig.id, `Mất kết nối (${reason}). Thử lại sau 30 giây...`);
+        addLog(botConfig.id, `Mất kết nối (${reason}). Thử lại sau 35 giây...`);
         
-        setTimeout(() => { startBot(botConfig); }, 30000);
+        setTimeout(() => { startBot(botConfig); }, 35000);
     });
 
     bot.on('error', (err) => {
@@ -107,11 +113,11 @@ function startBot(botConfig) {
     });
 }
 
-// Phục vụ file HTML từ thư mục công khai (public)
+// Phục vụ file HTML từ thư mục public
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 
-// Xử lý sự kiện WebSocket quản lý từ web
+// Xử lý sự kiện WebSocket
 io.on('connection', (socket) => {
     socket.emit('update_status', bots);
     socket.emit('update_server_config', SERVER_CONFIG);
@@ -125,8 +131,9 @@ io.on('connection', (socket) => {
         SERVER_CONFIG.port = Number(newConfig.port);
         console.log(`[Hệ thống] Đã đổi IP Server thành: ${SERVER_CONFIG.host}:${SERVER_CONFIG.port}`);
         
-        // Khởi động lại cả 2 bot với IP mới ngay lập tức
-        bots.forEach(b => startBot(b));
+        // Đổi IP và kết nối giãn cách 6 giây tránh spam
+        startBot(bots[0]);
+        setTimeout(() => { startBot(bots[1]); }, 6000);
     });
 
     // Nhận yêu cầu đổi tên bot
@@ -140,8 +147,11 @@ io.on('connection', (socket) => {
     });
 });
 
-// Khởi chạy 2 bot ban đầu
-bots.forEach(b => startBot(b));
+// Cho Bot 1 vào trước, 6 giây sau Bot 2 mới vào (chống bị Server chặn do vào cùng lúc)
+startBot(bots[0]);
+setTimeout(() => {
+    startBot(bots[1]);
+}, 6000);
 
 const PORT = process.env.PORT || 8080;
 server.listen(PORT, () => {
