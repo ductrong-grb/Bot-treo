@@ -18,8 +18,8 @@ let SERVER_CONFIG = {
 
 // Trạng thái của 2 Bot (Không lưu instance trực tiếp vào đây để tránh lỗi Socket)
 let botsData = [
-    { id: 1, username: 'BotTreos01', status: 'Đang tắt', logs: [] },
-    { id: 2, username: 'BotTreo0z2', status: 'Đang tắt', logs: [] }
+    { id: 1, username: 'BotTreaos01', status: 'Đang tắt', logs: [] },
+    { id: 2, username: 'BotTreo0sz2', status: 'Đang tắt', logs: [] }
 ];
 
 // Lưu trữ instance của bot riêng biệt
