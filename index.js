@@ -1,100 +1,149 @@
 const mineflayer = require('mineflayer');
 const express = require('express');
-const app = express();
+const http = require('http');
+const { Server } = require('socket.io');
+const path = require('path');
 
-// --- CẤU HÌNH BOT (THAY ĐỔI TẠI ĐÂY) ---
-const CONFIG = {
-    host: '167.235.93.185', // Địa chỉ IP server
-    port: 25847,            // Cổng kết nối
-    username: 'BotTreo01',  // Tên nhân vật của bot (không dấu)
-    version: '1.21.1',      // Phiên bản server
-    auth: 'offline'         // Giữ nguyên nếu là server crack/offline
+const app = express();
+const server = http.createServer(app);
+const io = new Server(server);
+
+// --- CẤU HÌNH MẶC ĐỊNH BAN ĐẦU ---
+let SERVER_CONFIG = {
+    host: '167.235.93.185',
+    port: 25847,
+    version: '1.21.1',
+    auth: 'offline'
 };
 
-let bot;
-let reconnectInterval = 30000; // Tăng thời gian chờ lên 30 giây để tránh bị server chặn do spam kết nối
+// Trạng thái của 2 Bot
+let bots = [
+    { id: 1, username: 'BotTreo01', instance: null, status: 'Đang tắt', logs: [] },
+    { id: 2, username: 'BotTreo02', instance: null, status: 'Đang tắt', logs: [] }
+];
 
-function createMinecraftBot() {
-    console.log(`[Hệ thống] Đang khởi tạo kết nối đến ${CONFIG.host}:${CONFIG.port}...`);
+// Hàm ghi log
+function addLog(botId, message) {
+    const time = new Date().toLocaleTimeString();
+    const logText = `[${time}] [Bot ${botId}] ${message}`;
+    console.log(logText);
     
-    bot = mineflayer.createBot({
-        host: CONFIG.host,
-        port: CONFIG.port,
-        username: CONFIG.username,
-        version: CONFIG.version,
-        auth: CONFIG.auth,
-        hideErrors: true // Ẩn bớt các lỗi mạng rác để log sạch hơn
+    const targetBot = bots.find(b => b.id === botId);
+    if (targetBot) {
+        targetBot.logs.push(logText);
+        if (targetBot.logs.length > 50) targetBot.logs.shift();
+    }
+    io.emit('update_logs', { botId, logs: targetBot ? targetBot.logs : [] });
+}
+
+// Hàm khởi chạy bot
+function startBot(botConfig) {
+    const targetBot = bots.find(b => b.id === botConfig.id);
+    if (!targetBot) return;
+
+    if (targetBot.instance) {
+        try { targetBot.instance.quit(); } catch (e) {}
+    }
+
+    targetBot.status = 'Đang kết nối...';
+    io.emit('update_status', bots);
+    addLog(botConfig.id, `Đang kết nối tới ${SERVER_CONFIG.host}:${SERVER_CONFIG.port} với tên: ${botConfig.username}...`);
+
+    const bot = mineflayer.createBot({
+        host: SERVER_CONFIG.host,
+        port: Number(SERVER_CONFIG.port),
+        username: botConfig.username,
+        version: SERVER_CONFIG.version,
+        auth: SERVER_CONFIG.auth,
+        hideErrors: true
     });
 
-    // Xử lý khi vào server thành công
-    bot.on('spawn', () => {
-        console.log(`[Thành công] Bot "${bot.username}" đã vào server và bắt đầu treo an toàn!`);
-        
-        // Đăng nhập/Đăng ký nếu server yêu cầu (bỏ comment nếu cần)
-        // bot.chat('/register matkhau123 matkhau123');
-        // bot.chat('/login matkhau123');
+    targetBot.instance = bot;
 
-        // --- HỆ THỐNG ANTI-AFK & DI CHUYỂN THÔNG MINH ---
-        setInterval(() => {
+    bot.on('spawn', () => {
+        targetBot.status = 'Đang trong game (Online)';
+        io.emit('update_status', bots);
+        addLog(botConfig.id, `Đã vào server thành công với tên "${bot.username}"!`);
+
+        // Anti-AFK & di chuyển ngẫu nhiên
+        const afkInterval = setInterval(() => {
             if (bot && bot.entity) {
-                // 1. Xoay góc nhìn ngẫu nhiên trông giống người thật
                 const randomYaw = bot.entity.yaw + (Math.random() - 0.5) * 2;
                 const randomPitch = (Math.random() - 0.5) * 0.5;
                 bot.look(randomYaw, randomPitch, true);
 
-                // 2. Tự động di chuyển ngẫu nhiên (tiến, lùi, trái, phải) trong 1.5 giây rồi dừng lại
                 const actions = ['forward', 'back', 'left', 'right'];
                 const randomAction = actions[Math.floor(Math.random() * actions.length)];
-                
                 bot.setControlState(randomAction, true);
-                setTimeout(() => {
-                    bot.setControlState(randomAction, false);
-                }, 1500);
+                setTimeout(() => { bot.setControlState(randomAction, false); }, 1500);
 
-                // 3. Nhảy nhẹ
                 bot.setControlState('jump', true);
                 setTimeout(() => { bot.setControlState('jump', false); }, 400);
             }
-        }, 15000); // Thực hiện chuỗi di chuyển ngẫu nhiên mỗi 15 giây
+        }, 20000);
+
+        bot.once('end', () => { clearInterval(afkInterval); });
     });
 
-    // Tự động hồi sinh ngay khi chết
     bot.on('death', () => {
-        console.log('[Hệ thống] Bot đã bị hạ gục! Đang hồi sinh sau 3 giây...');
-        setTimeout(() => {
-            if (bot) {
-                bot.respawn();
-            }
-        }, 3000);
+        addLog(botConfig.id, 'Bot đã chết, đang hồi sinh...');
+        setTimeout(() => { if (bot) bot.respawn(); }, 3000);
     });
 
-    // Ghi nhận lý do bị đá khỏi server
     bot.on('kicked', (reason) => {
-        console.warn(`[Cảnh báo] Bot bị server đá. Lý do: ${JSON.stringify(reason)}`);
+        addLog(botConfig.id, `Bị đá khỏi server! Lý do: ${JSON.stringify(reason)}`);
     });
 
-    // Khi mất kết nối, chờ thời gian lâu hơn trước khi thử lại để tránh bị chặn IP
     bot.on('end', (reason) => {
-        console.log(`[Ngắt kết nối] Mất kết nối (${reason}). Sẽ thử kết nối lại sau ${reconnectInterval / 1000} giây...`);
-        setTimeout(() => {
-            createMinecraftBot();
-        }, reconnectInterval);
+        targetBot.status = 'Mất kết nối, đang thử lại...';
+        io.emit('update_status', bots);
+        addLog(botConfig.id, `Mất kết nối (${reason}). Thử lại sau 30 giây...`);
+        
+        setTimeout(() => { startBot(botConfig); }, 30000);
     });
 
-    // Bắt lỗi ngoại lệ tránh làm sập ứng dụng web
     bot.on('error', (err) => {
-        console.error(`[Lỗi bot]: ${err.message}`);
+        addLog(botConfig.id, `Lỗi: ${err.message}`);
     });
 }
 
-// Khởi tạo Web Server giữ Render luôn thức (Ping keep-alive)
-const PORT = process.env.PORT || 8080;
-app.get('/', (req, res) => {
-    res.send('Bot Minecraft Proxy Keeper is running!');
+// Phục vụ file HTML từ thư mục công khai (public)
+app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.json());
+
+// Xử lý sự kiện WebSocket quản lý từ web
+io.on('connection', (socket) => {
+    socket.emit('update_status', bots);
+    socket.emit('update_server_config', SERVER_CONFIG);
+    bots.forEach(b => {
+        socket.emit('update_logs', { botId: b.id, logs: b.logs });
+    });
+
+    // Nhận cấu hình IP/Port mới từ Web
+    socket.on('update_server', (newConfig) => {
+        SERVER_CONFIG.host = newConfig.host;
+        SERVER_CONFIG.port = Number(newConfig.port);
+        console.log(`[Hệ thống] Đã đổi IP Server thành: ${SERVER_CONFIG.host}:${SERVER_CONFIG.port}`);
+        
+        // Khởi động lại cả 2 bot với IP mới ngay lập tức
+        bots.forEach(b => startBot(b));
+    });
+
+    // Nhận yêu cầu đổi tên bot
+    socket.on('change_bot_name', (data) => {
+        const target = bots.find(b => b.id === data.id);
+        if (target) {
+            target.username = data.username;
+            addLog(target.id, `Đổi tên thành: ${target.username}. Đang kết nối lại...`);
+            startBot(target);
+        }
+    });
 });
 
-app.listen(PORT, () => {
-    console.log(`[Web] Cổng giám sát hoạt động tại port: ${PORT}`);
-    // Khởi chạy bot Minecraft lần đầu tiên
-    createMinecraftBot();
+// Khởi chạy 2 bot ban đầu
+bots.forEach(b => startBot(b));
+
+const PORT = process.env.PORT || 8080;
+server.listen(PORT, () => {
+    console.log(`[Web Dashboard] Đang chạy tại cổng: ${PORT}`);
 });
