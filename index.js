@@ -6,7 +6,7 @@ const app = express();
 const CONFIG = {
     host: '162.55.100.208', // Địa chỉ IP server
     port: 25847,            // Cổng kết nối
-    username: 'hahhditb', // Tên nhân vật của bot
+    username: 'BotTreo01',  // Tên nhân vật của bot (không dấu)
     version: '1.21.1',      // Phiên bản server
     auth: 'offline'         // Giữ nguyên nếu là server crack/offline
 };
@@ -34,20 +34,28 @@ function createMinecraftBot() {
         // bot.chat('/register matkhau123 matkhau123');
         // bot.chat('/login matkhau123');
 
-        // --- HỆ THỐNG ANTI-AFK THÔNG MINH ---
-        // Thay đổi hành động ngẫu nhiên mỗi 25-45 giây để đánh lừa anti-cheat và tránh bị đá vì đứng im quá lâu
+        // --- HỆ THỐNG ANTI-AFK & DI CHUYỂN THÔNG MINH ---
         setInterval(() => {
             if (bot && bot.entity) {
-                // Hành động 1: Nhảy nhẹ
-                bot.setControlState('jump', true);
-                setTimeout(() => { bot.setControlState('jump', false); }, 400);
-
-                // Hành động 2: Xoay góc nhìn ngẫu nhiên một chút trông giống người thật
-                const randomYaw = bot.entity.yaw + (Math.random() - 0.5) * 1.5;
+                // 1. Xoay góc nhìn ngẫu nhiên trông giống người thật
+                const randomYaw = bot.entity.yaw + (Math.random() - 0.5) * 2;
                 const randomPitch = (Math.random() - 0.5) * 0.5;
                 bot.look(randomYaw, randomPitch, true);
+
+                // 2. Tự động di chuyển ngẫu nhiên (tiến, lùi, trái, phải) trong 1.5 giây rồi dừng lại
+                const actions = ['forward', 'back', 'left', 'right'];
+                const randomAction = actions[Math.floor(Math.random() * actions.length)];
+                
+                bot.setControlState(randomAction, true);
+                setTimeout(() => {
+                    bot.setControlState(randomAction, false);
+                }, 1500);
+
+                // 3. Nhảy nhẹ
+                bot.setControlState('jump', true);
+                setTimeout(() => { bot.setControlState('jump', false); }, 400);
             }
-        }, 30000);
+        }, 15000); // Thực hiện chuỗi di chuyển ngẫu nhiên mỗi 15 giây
     });
 
     // Tự động hồi sinh ngay khi chết
