@@ -1,163 +1,170 @@
-const mineflayer = require('mineflayer');
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
+const mineflayer = require('mineflayer');
 const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, { pingTimeout: 60000 });
+const io = new Server(server);
+const PORT = process.env.PORT || 3000;
 
-// Cấu hình Server mặc định
-let SERVER_CONFIG = {
-    host: '50.117.3.3',
-    port: 26168,
-    version: '1.21.1',
-    auth: 'offline'
+// Phục vụ file tĩnh trong thư mục public
+app.use(express.static(path.join(__dirname, 'public')));
+
+// Cấu hình khởi tạo Bot
+let botConfig = {
+  host: process.env.MC_HOST || '127.0.0.1',
+  port: parseInt(process.env.MC_PORT) || 25565,
+  username: process.env.MC_USERNAME || 'BotTreo_Pro',
+  version: false
 };
 
-// Trạng thái của 2 Bot (Không lưu instance trực tiếp vào đây để tránh lỗi Socket)
-let botsData = [
-    { id: 1, username: 'BotTreaos1', status: 'Đang tắt', logs: [] },
-    { id: 2, username: 'BotTre2', status: 'Đang tắt', logs: [] }
-];
+let bot = null;
+let reconnectTimer = null;
+let afkInterval = null;
+const maxLogs = 50;
+const logs = [];
 
-// Lưu trữ instance của bot riêng biệt
-const botInstances = { 1: null, 2: null };
-
-// Hàm gửi dữ liệu trạng thái an toàn qua Web
-function sendSafeStatus() {
-    io.emit('update_status', botsData);
+// Hàm lưu log và gửi realtime tới web
+function addLog(msg) {
+  const timestamp = new Date().toLocaleTimeString();
+  const formattedLog = `[${timestamp}] ${msg}`;
+  logs.push(formattedLog);
+  if (logs.length > maxLogs) logs.shift();
+  io.emit('update_logs', logs);
 }
 
-// Hàm ghi log gọn nhẹ
-function addLog(botId, message) {
-    const time = new Date().toLocaleTimeString();
-    const logText = `[${time}] [Bot ${botId}] ${message}`;
-    console.log(logText);
-    
-    const targetBot = botsData.find(b => b.id === botId);
-    if (targetBot) {
-        targetBot.logs.push(logText);
-        if (targetBot.logs.length > 20) targetBot.logs.shift(); // Giữ tối đa 20 dòng log
-    }
-    io.emit('update_logs', { botId, logs: targetBot ? targetBot.logs : [] });
+// Khởi tạo Bot Mineflayer
+function createBot() {
+  if (bot) {
+    try { bot.end(); } catch (e) {}
+  }
+
+  addLog(`Đang kết nối tới ${botConfig.host}:${botConfig.port} với tên "${botConfig.username}"...`);
+  io.emit('update_status', { status: 'Connecting', config: botConfig });
+
+  bot = mineflayer.createBot(botConfig);
+  bindBotEvents();
 }
 
-// Hàm khởi chạy bot
-function startBot(botConfig) {
-    const targetBot = botsData.find(b => b.id === botConfig.id);
-    if (!targetBot) return;
+function bindBotEvents() {
+  // Khi kết nối thành công vào thế giới
+  bot.once('spawn', () => {
+    addLog(`Bot "${bot.username}" đã vào game thành công!`);
+    io.emit('update_status', { status: 'Online', config: botConfig });
 
-    // Dọn dẹp bot cũ
-    if (botInstances[botConfig.id]) {
-        try { 
-            botInstances[botConfig.id].removeAllListeners();
-            botInstances[botConfig.id].quit(); 
-        } catch (e) {}
-        botInstances[botConfig.id] = null;
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
     }
 
-    targetBot.status = 'Đang kết nối...';
-    sendSafeStatus();
-    addLog(botConfig.id, `Đang kết nối tới ${SERVER_CONFIG.host}:${SERVER_CONFIG.port} với tên: ${targetBot.username}...`);
+    startAntiAFK();
+    updateHealthStats();
+  });
 
-    const bot = mineflayer.createBot({
-        host: SERVER_CONFIG.host,
-        port: Number(SERVER_CONFIG.port),
-        username: targetBot.username,
-        version: SERVER_CONFIG.version,
-        auth: SERVER_CONFIG.auth,
-        hideErrors: true,
-        checkTimeoutInterval: 60000
-    });
+  // Cập nhật chỉ số Sinh tồn (Máu & Thức ăn)
+  bot.on('health', () => {
+    updateHealthStats();
+  });
 
-    botInstances[botConfig.id] = bot;
+  // Lắng nghe tin nhắn chat
+  bot.on('messagestr', (message) => {
+    if (message.trim()) {
+      addLog(`[Chat] ${message}`);
+    }
+  });
 
-    bot.once('spawn', () => {
-        targetBot.status = 'Đang trong game (Online)';
-        sendSafeStatus();
-        addLog(botConfig.id, `Đã vào server thành công với tên "${bot.username}"!`);
+  // Xử lý khi ngắt kết nối
+  bot.once('end', (reason) => {
+    addLog(`Bot đã ngắt kết nối: ${reason}`);
+    io.emit('update_status', { status: 'Offline', config: botConfig });
+    stopAntiAFK();
+    scheduleReconnect();
+  });
 
-        // Anti-AFK
-        const afkInterval = setInterval(() => {
-            if (bot && bot.entity) {
-                const randomYaw = bot.entity.yaw + (Math.random() - 0.5) * 2;
-                bot.look(randomYaw, 0, true);
-
-                const actions = ['forward', 'back', 'left', 'right'];
-                const randomAction = actions[Math.floor(Math.random() * actions.length)];
-                bot.setControlState(randomAction, true);
-                setTimeout(() => { if (bot) bot.setControlState(randomAction, false); }, 1200);
-
-                bot.setControlState('jump', true);
-                setTimeout(() => { if (bot) bot.setControlState('jump', false); }, 400);
-            }
-        }, 25000);
-
-        bot.once('end', () => { clearInterval(afkInterval); });
-    });
-
-    bot.on('death', () => {
-        addLog(botConfig.id, 'Bot đã chết, đang hồi sinh...');
-        setTimeout(() => { if (bot) bot.respawn(); }, 3000);
-    });
-
-    bot.on('kicked', (reason) => {
-        addLog(botConfig.id, `Bị đá khỏi server! Lý do: ${JSON.stringify(reason)}`);
-    });
-
-    bot.on('end', (reason) => {
-        targetBot.status = 'Mất kết nối';
-        sendSafeStatus();
-        addLog(botConfig.id, `Mất kết nối (${reason}). Thử lại sau 35 giây...`);
-        
-        setTimeout(() => { startBot(botConfig); }, 35000);
-    });
-
-    bot.on('error', (err) => {
-        addLog(botConfig.id, `Lỗi: ${err.message}`);
-    });
+  // Xử lý lỗi
+  bot.on('error', (err) => {
+    addLog(`[Lỗi Bot] ${err.message}`);
+  });
 }
 
-// Phục vụ file HTML từ thư mục public
-app.use(express.static(path.join(__dirname, 'public')));
-app.use(express.json());
+function updateHealthStats() {
+  if (!bot) return;
+  io.emit('update_stats', {
+    health: Math.round(bot.health || 0),
+    food: Math.round(bot.food || 0)
+  });
+}
 
-// Xử lý WebSocket
+// Cơ chế chống AFK tự động
+function startAntiAFK() {
+  stopAntiAFK();
+  afkInterval = setInterval(() => {
+    if (bot && bot.entity) {
+      const randomYaw = (Math.random() - 0.5) * Math.PI;
+      const randomPitch = (Math.random() - 0.5) * (Math.PI / 2);
+      bot.look(randomYaw, randomPitch, true);
+
+      if (Math.random() > 0.6) {
+        bot.setControlState('jump', true);
+        setTimeout(() => bot.setControlState('jump', false), 400);
+      }
+    }
+  }, 12000);
+}
+
+function stopAntiAFK() {
+  if (afkInterval) clearInterval(afkInterval);
+}
+
+function scheduleReconnect() {
+  if (!reconnectTimer) {
+    addLog('Tự động kết nối lại sau 10 giây...');
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
+      createBot();
+    }, 10000);
+  }
+}
+
+// Xử lý kết nối Socket.IO từ Giao diện Web
 io.on('connection', (socket) => {
-    socket.emit('update_status', botsData);
-    socket.emit('update_server_config', SERVER_CONFIG);
-    botsData.forEach(b => {
-        socket.emit('update_logs', { botId: b.id, logs: b.logs });
-    });
+  // Gửi trạng thái ban đầu cho giao diện
+  socket.emit('update_status', {
+    status: bot && bot.entity ? 'Online' : 'Offline',
+    config: botConfig
+  });
+  socket.emit('update_logs', logs);
+  if (bot) updateHealthStats();
 
-    socket.on('update_server', (newConfig) => {
-        SERVER_CONFIG.host = newConfig.host;
-        SERVER_CONFIG.port = Number(newConfig.port);
-        console.log(`[Hệ thống] Đã đổi IP Server thành: ${SERVER_CONFIG.host}:${SERVER_CONFIG.port}`);
-        
-        startBot(botsData[0]);
-        setTimeout(() => { startBot(botsData[1]); }, 6000);
-    });
+  // Đổi Server
+  socket.on('update_server', (data) => {
+    botConfig.host = data.host;
+    botConfig.port = parseInt(data.port) || 25565;
+    addLog(`Đã nhận lệnh đổi server sang ${botConfig.host}:${botConfig.port}`);
+    createBot();
+  });
 
-    socket.on('change_bot_name', (data) => {
-        const target = botsData.find(b => b.id === data.id);
-        if (target) {
-            target.username = data.username;
-            addLog(target.id, `Đổi tên thành: ${target.username}. Đang kết nối lại...`);
-            startBot(target);
-        }
-    });
+  // Đổi Tên Bot
+  socket.on('change_bot_name', (data) => {
+    if (data.username && data.username.trim()) {
+      botConfig.username = data.username.trim();
+      addLog(`Đã nhận lệnh đổi tên bot thành "${botConfig.username}"`);
+      createBot();
+    }
+  });
+
+  // Lệnh gửi chat vào game từ Web
+  socket.on('send_chat', (msg) => {
+    if (bot && bot.entity && msg.trim()) {
+      bot.chat(msg);
+      addLog(`[Web -> Game] ${msg}`);
+    }
+  });
 });
 
-// Cho Bot 1 vào trước, 6 giây sau Bot 2 mới vào
-startBot(botsData[0]);
-setTimeout(() => {
-    startBot(botsData[1]);
-}, 6000);
-
-const PORT = process.env.PORT || 8080;
 server.listen(PORT, () => {
-    console.log(`[Web Dashboard] Đang chạy tại cổng: ${PORT}`);
+  console.log(`[Web Dashboard] Chạy tại port ${PORT}`);
+  createBot();
 });
