@@ -10,8 +10,8 @@ const io = new Server(server, { pingTimeout: 60000 });
 
 // Cấu hình Server mặc định
 let SERVER_CONFIG = {
-    host: '167.235.93.185',
-    port: 25847,
+    host: '50.117.3.3',
+    port: 2618,
     version: '1.21.1',
     auth: 'offline'
 };
