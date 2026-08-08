@@ -14,8 +14,8 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // Cấu hình khởi tạo Bot
 let botConfig = {
-  host: process.env.MC_HOST || '127.0.0.1',
-  port: parseInt(process.env.MC_PORT) || 25565,
+  host: process.env.MC_HOST || '50.117.3.3',
+  port: parseInt(process.env.MC_PORT) || 26168,
   username: process.env.MC_USERNAME || 'BotTreo_Pro',
   version: false
 };
